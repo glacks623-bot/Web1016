@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 부산 디지털·콘텐츠 예산 대시보드</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- External Libraries (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- 1. Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-blue-500/20">
+          <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 leading-tight">2026 부산 디지털·콘텐츠 주요지원사업 예산 대시보드</h1>
+          <p class="text-xs text-slate-500">실시간 데이터 시각화 & 인터랙티브 다차원 필터링 시스템</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="text-slate-600">현재 데이터:</span>
+          <span id="currentFileName" class="font-semibold text-slate-800 truncate max-w-[180px]">2026년 예산자료 (기본 데이터)</span>
+        </div>
+        <button id="btnResetSample" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors shadow-sm">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          샘플 데이터 리셋
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 flex-1 w-full">
+
+    <!-- 2. File Upload Dropzone -->
+    <section>
+      <div id="dropzone" class="border-2 border-dashed border-slate-300 rounded-2xl p-5 text-center bg-white hover:border-blue-500 hover:bg-blue-50/30 transition-all cursor-pointer group shadow-sm">
+        <input type="file" id="fileInput" class="hidden" accept=".csv, .xlsx, .xls">
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+          </div>
+          <div class="text-center sm:text-left">
+            <p class="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
+              CSV 또는 엑셀(.xlsx, .xls) 파일을 이곳에 드래그하거나 클릭하여 업로드하세요
+            </p>
+            <p class="text-xs text-slate-500 mt-0.5">
+              동일한 형식의 예산자료를 업로드하면 실시간으로 분석 차트 및 목록이 자동 갱신됩니다. (<span id="totalRawCount" class="font-semibold text-blue-600">59개 사업 로드됨</span>)
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Cascading Filters Bar -->
+    <section class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="sliders-horizontal" class="w-4 h-4 text-blue-600"></i>
+          <h2 class="text-sm font-bold text-slate-800">조건별 다차원 필터링</h2>
+          <span class="text-xs text-slate-400">필터 선택 시 연동된 결과가 실시간으로 반영됩니다</span>
+        </div>
+        <button id="btnResetFilters" class="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 transition-colors">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          필터 초기화
+        </button>
+      </div>
+
+      <!-- Filter Controls Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <!-- 1. 대분류 -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">1. 대분류</label>
+          <select id="filterCatLarge" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="all">전체 (대분류)</option>
+          </select>
+        </div>
+
+        <!-- 2. 중분류 -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">2. 중분류</label>
+          <select id="filterCatMid" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="all">전체 (중분류)</option>
+          </select>
+        </div>
+
+        <!-- 3. 소분류 -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">3. 소분류</label>
+          <select id="filterCatSmall" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="all">전체 (소분류)</option>
+          </select>
+        </div>
+
+        <!-- 4. 담당 부서 -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">4. 소관/담당 부서</label>
+          <select id="filterDept" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="all">전체 (부서)</option>
+          </select>
+        </div>
+
+        <!-- 5. 사업 유형 -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">5. 사업 유형</label>
+          <select id="filterType" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="all">전체 (사업유형)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Keyword Search -->
+      <div class="relative pt-1">
+        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-3.5"></i>
+        <input type="text" id="searchKeyword" placeholder="사업명, 소분류, 지원 내용 등 검색할 키워드를 입력하세요..." 
+               class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+      </div>
+    </section>
+
+    <!-- 4. KPI Summary Cards (4 Columns) -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Card 1: 조회된 사업 수 -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 mb-2">
+          <span class="text-xs font-semibold">조회된 사업 수</span>
+          <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+            <i data-lucide="folder-check" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="text-2xl font-extrabold text-slate-900" id="kpiProjectCount">59건</div>
+        <div class="text-xs text-blue-600 font-medium mt-1" id="kpiProjectPercent">전체 59건 중 100%</div>
+      </div>
+
+      <!-- Card 2: 총 지원 예산합계 -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 mb-2">
+          <span class="text-xs font-semibold">총 지원 예산 합계</span>
+          <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <i data-lucide="coins" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="text-2xl font-extrabold text-slate-900 truncate" id="kpiTotalBudget">54,974.3 백만원</div>
+        <div class="text-xs text-emerald-600 font-medium mt-1" id="kpiTotalBudgetEok">약 549.7억 원</div>
+      </div>
+
+      <!-- Card 3: 재원 분담율 -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 mb-2">
+          <span class="text-xs font-semibold">주요 재원 분담율</span>
+          <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <i data-lucide="pie-chart" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-sm font-bold text-slate-900">
+          <span id="kpiCityRatio">시비 55.5%</span>
+          <span id="kpiNatRatio" class="text-slate-500 font-medium">국비 36.2%</span>
+        </div>
+        <div class="w-full bg-slate-100 h-2 rounded-full mt-2 overflow-hidden flex">
+          <div id="kpiProgressBar" class="bg-blue-600 h-full rounded-full transition-all duration-500" style="width: 55.5%"></div>
+        </div>
+      </div>
+
+      <!-- Card 4: 참여 부서 수 -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 mb-2">
+          <span class="text-xs font-semibold">참여/소관 부서 현황</span>
+          <div class="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+            <i data-lucide="building-2" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="text-2xl font-extrabold text-slate-900" id="kpiDeptCount">7개 부서</div>
+        <div class="text-xs text-purple-600 font-medium mt-1" id="kpiCatCount">4개 전략 분야 구성</div>
+      </div>
+    </section>
+
+    <!-- 5. Charts Section (2 Columns) -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Chart 1: 대분류별 예산 도넛 -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+              4대 전략 대분류별 예산 비중
+            </h3>
+            <p class="text-xs text-slate-400">전략 분야별 예산 점유율(%) 및 총액 비교</p>
+          </div>
+        </div>
+        <div class="relative flex-1 min-h-[280px]">
+          <canvas id="categoryDoughnutChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 2: 부서별 예산 수평 바 -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
+              주요 소관 부서별 예산 규모
+            </h3>
+            <p class="text-xs text-slate-400">부서별 시비/국비/민자 분담 내역 랭킹</p>
+          </div>
+        </div>
+        <div class="relative flex-1 min-h-[280px]">
+          <canvas id="departmentBarChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. Detailed Data Grid Table -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <!-- Table Actions Header -->
+      <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">사업 목록 상세 데이터</h3>
+          <p class="text-xs text-slate-500 mt-0.5">행을 클릭하면 해당 사업의 전체 지원 내용과 재원 세부내역을 확인할 수 있습니다.</p>
+        </div>
+        <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div class="flex items-center gap-1.5 text-xs text-slate-600">
+            <span>보기:</span>
+            <select id="rowsPerPage" class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="10">10개씩</option>
+              <option value="20" selected>20개씩</option>
+              <option value="50">50개씩</option>
+              <option value="100">100개씩</option>
+            </select>
+          </div>
+          <button id="btnExportExcel" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-sm">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            엑셀 다운로드
+          </button>
+        </div>
+      </div>
+
+      <!-- Table Body -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
+              <th class="py-3 px-4 text-center cursor-pointer select-none hover:bg-slate-100" onclick="handleSort('no')">
+                번호 <span id="sort-no" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 cursor-pointer select-none hover:bg-slate-100" onclick="handleSort('catLarge')">
+                대분류 <span id="sort-catLarge" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 cursor-pointer select-none hover:bg-slate-100" onclick="handleSort('catSmall')">
+                소분류 <span id="sort-catSmall" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 cursor-pointer select-none hover:bg-slate-100" onclick="handleSort('dept')">
+                소관부서 <span id="sort-dept" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 cursor-pointer select-none hover:bg-slate-100 min-w-[240px]" onclick="handleSort('projectName')">
+                사업명 <span id="sort-projectName" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 text-right cursor-pointer select-none hover:bg-slate-100" onclick="handleSort('nationalBudget')">
+                국비 <span id="sort-nationalBudget" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 text-right cursor-pointer select-none hover:bg-slate-100" onclick="handleSort('cityBudget')">
+                시비 <span id="sort-cityBudget" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 text-right cursor-pointer select-none hover:bg-slate-100" onclick="handleSort('totalBudget')">
+                총예산(백만원) <span id="sort-totalBudget" class="sort-icon text-slate-400">↕</span>
+              </th>
+              <th class="py-3 px-4 text-center">상세</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-slate-100 text-slate-700 text-sm">
+            <!-- Populated via JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div id="paginationControls" class="p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white">
+        <!-- Populated via JavaScript -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 7. Detail Information Modal -->
+  <div id="detailModal" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 transition-all transform animate-in fade-in duration-200">
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/50">
+        <div class="flex items-center gap-2">
+          <span id="modalNo" class="px-2.5 py-1 text-xs font-mono font-bold bg-blue-100 text-blue-800 rounded-lg">#01</span>
+          <span id="modalType" class="px-2.5 py-1 text-xs font-semibold bg-emerald-100 text-emerald-800 rounded-lg">공모사업</span>
+        </div>
+        <button id="modalCloseBtn" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-5">
+        <div>
+          <h4 id="modalTitle" class="text-xl font-bold text-slate-900 leading-snug">사업명</h4>
+          <p id="modalCategory" class="text-xs text-slate-500 mt-1">대분류 > 중분류 > 소분류</p>
+        </div>
+
+        <!-- Meta Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs">
+          <div>
+            <span class="text-slate-400 block">소관부서</span>
+            <span id="modalDept" class="font-bold text-slate-800 mt-0.5 block">-</span>
+          </div>
+          <div>
+            <span class="text-slate-400 block">진흥원 부서</span>
+            <span id="modalAgency" class="font-bold text-slate-800 mt-0.5 block">-</span>
+          </div>
+          <div>
+            <span class="text-slate-400 block">지원기능</span>
+            <span id="modalFunc" class="font-bold text-slate-800 mt-0.5 block">-</span>
+          </div>
+        </div>
+
+        <!-- Budget Matrix -->
+        <div>
+          <h5 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="credit-card" class="w-3.5 h-3.5 text-blue-600"></i>
+            2026년 예산 구성 (단위: 백만원)
+          </h5>
+          <div class="grid grid-cols-4 gap-2 text-center">
+            <div class="p-3 rounded-xl bg-blue-50/60 border border-blue-100">
+              <span class="text-xs text-blue-600 block">총예산</span>
+              <span id="modalTotal" class="text-sm font-extrabold text-blue-900 block mt-0.5">0</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <span class="text-xs text-slate-500 block">시비</span>
+              <span id="modalCity" class="text-sm font-bold text-slate-800 block mt-0.5">0</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <span class="text-xs text-slate-500 block">국비</span>
+              <span id="modalNat" class="text-sm font-bold text-slate-800 block mt-0.5">0</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <span class="text-xs text-slate-500 block">기타/민자</span>
+              <span id="modalOther" class="text-sm font-bold text-slate-800 block mt-0.5">0</span>
+            </div>
+          </div>
+          <p class="text-xs text-slate-500 mt-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+            <span class="font-semibold text-slate-600">재원 상세:</span>
+            <span id="modalDetailBudget" class="text-slate-700 ml-1">-</span>
+          </p>
+        </div>
+
+        <!-- Overview -->
+        <div>
+          <h5 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="file-text" class="w-3.5 h-3.5 text-blue-600"></i>
+            주요 지원 내용 (사업 개요)
+          </h5>
+          <div id="modalOverview" class="p-4 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+            -
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Toast Notification -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-xl opacity-0 transition-opacity duration-300 pointer-events-none flex items-center gap-2">
+    알림 메시지
+  </div>
+
+  <!-- 9. Loading Overlay -->
+  <div id="loadingOverlay" class="fixed inset-0 z-50 bg-white/70 backdrop-blur-xs flex items-center justify-center hidden">
+    <div class="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl shadow-xl border border-slate-200">
+      <div class="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <span class="text-xs font-bold text-slate-700">데이터를 분석하고 시각화하는 중...</span>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-4 mt-8">
+    <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-400">
+      2026 부산 디지털·콘텐츠 예산 대시보드 | Vanilla JavaScript & Tailwind CSS & Chart.js
+    </div>
+  </footer>
+
+  <!-- Application Scripts -->
+  <script src="js/sampleData.js"></script>
+  <script src="js/dataParser.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
